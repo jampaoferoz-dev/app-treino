@@ -26,7 +26,12 @@ Primeiro app construído como exercício de aprendizado: simples de propósito, 
 3. O app monta um treino de corpo inteiro:
    - Vagas puladas na sessão anterior vêm primeiro.
    - Dentro de cada vaga, prefere o exercício feito há mais tempo (variedade).
-4. Em cada vaga: **✓ feito**, **↻ troquei** (máquina ocupada → sugere outra opção da mesma vaga) ou **✗ pulei**.
+4. Cada cartão mostra a prescrição (séries × repetições · descanso), uma dica curta de execução
+   (funciona sem internet) e um link de busca de vídeos no YouTube.
+5. Você marca cada série; o descanso começa sozinho, com contagem e bipe no fim. Ao completar as
+   séries, o exercício conta como feito. Também dá para **↻ trocar** (máquina ocupada) ou **✗ pular**.
+6. Campo de peso (kg) nos exercícios com carga, já preenchido com o peso da última vez.
+   Ao encerrar, exercício com ao menos uma série conta como feito.
 
 ## Corrida
 
@@ -34,5 +39,5 @@ Aba separada com registro simples: data, distância, tempo. Fica fora da lógica
 
 ## Fora da v1
 
-- Registro de peso e repetições; progressão de carga.
+- Progressão automática de carga (sugerir subir/baixar o peso).
 - Sugestões por IA (v2 opcional e híbrida, com as regras como plano B).

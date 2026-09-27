@@ -1,7 +1,7 @@
 // Telas do app. Cada ação muda `estado`, salva e redesenha a tela inteira.
 
 import { VAGAS, EQUIPAMENTOS, LOCAIS, EXERCICIOS } from './dados.js';
-import { montarTreino, trocarExercicio } from './logica.js';
+import { montarTreino, trocarExercicio, novoItem, statusFinal } from './logica.js';
 import { carregar, salvar } from './armazenamento.js';
 
 const estado = carregar();
@@ -10,7 +10,10 @@ let escolha = { minutos: 60, local: 'smartfit' }; // seleção da tela inicial
 let aviso = '';
 
 const $app = document.getElementById('app');
-const nomeExercicio = (id) => EXERCICIOS.find((e) => e.id === id).nome;
+const exercicio = (id) => EXERCICIOS.find((e) => e.id === id);
+const nomeExercicio = (id) => exercicio(id).nome;
+const linkVideo = (nome) =>
+  `https://www.youtube.com/results?search_query=${encodeURIComponent(`como fazer ${nome} execução correta`)}`;
 
 function atualizar() {
   salvar(estado);
@@ -41,34 +44,101 @@ function telaInicioTreino() {
   `;
 }
 
+function cartaoExercicio(item, i) {
+  const ex = exercicio(item.exercicioId);
+  const feitas = item.seriesFeitas ?? 0;
+  const cabecalho = `
+    <div class="vaga">${VAGAS[item.vaga]}</div>
+    <div class="exercicio">${ex.nome}</div>
+    <div class="prescricao">${ex.series} séries × ${ex.reps} · descanso ${ex.descanso}s</div>`;
+
+  if (item.status) {
+    return `
+      <div class="cartao ${item.status}">
+        ${cabecalho}
+        <div class="acoes">
+          <span class="selo ${item.status}">${item.status === 'feito' ? '✓ feito' : '✗ pulado'}</span>
+          ${item.carga != null ? `<span class="discreto">${item.carga} kg</span>` : ''}
+          <button class="texto" data-acao="desfazer" data-i="${i}">desfazer</button>
+        </div>
+        ${estado.sessaoAtual.descanso?.i === i ? '<div class="cronometro" id="cronometro"></div>' : ''}
+      </div>`;
+  }
+
+  const series = Array.from({ length: ex.series }, (_, k) =>
+    `<button class="serie ${k < feitas ? 'feita' : ''}" data-acao="serie" data-i="${i}" data-k="${k + 1}">
+      ${k < feitas ? '✓ ' : ''}Série ${k + 1}</button>`).join('');
+
+  const descanso = estado.sessaoAtual.descanso;
+  const cronometro = descanso?.i === i ? '<div class="cronometro" id="cronometro"></div>' : '';
+
+  return `
+    <div class="cartao">
+      ${cabecalho}
+      <details>
+        <summary>Como fazer</summary>
+        <p>${ex.dica}</p>
+        <a href="${linkVideo(ex.nome)}" target="_blank" rel="noopener">▶ Ver vídeos no YouTube</a>
+      </details>
+      ${ex.carga ? `
+        <label class="carga">Peso (kg)
+          <input type="text" inputmode="decimal" placeholder="—"
+            value="${item.carga ?? ''}" data-acao="carga" data-i="${i}">
+        </label>` : ''}
+      <div class="series">${series}</div>
+      ${cronometro}
+      ${item.tentados.length ? `<div class="discreto">trocado de: ${item.tentados.map(nomeExercicio).join(', ')}</div>` : ''}
+      <div class="acoes">
+        <button data-acao="trocar" data-i="${i}">↻ Trocar</button>
+        <button data-acao="pular" data-i="${i}">✗ Pular</button>
+      </div>
+    </div>`;
+}
+
 function telaTreino() {
   const s = estado.sessaoAtual;
   const feitos = s.itens.filter((i) => i.status === 'feito').length;
 
-  const cartoes = s.itens.map((item, i) => {
-    const acoes = item.status
-      ? `<span class="selo ${item.status}">${item.status === 'feito' ? '✓ feito' : '✗ pulado'}</span>
-         <button class="texto" data-acao="desfazer" data-i="${i}">desfazer</button>`
-      : `<button data-acao="feito" data-i="${i}">✓ Feito</button>
-         <button data-acao="trocar" data-i="${i}">↻ Trocar</button>
-         <button data-acao="pular" data-i="${i}">✗ Pular</button>`;
-    return `
-      <div class="cartao ${item.status ?? ''}">
-        <div class="vaga">${VAGAS[item.vaga]}</div>
-        <div class="exercicio">${nomeExercicio(item.exercicioId)}</div>
-        ${item.tentados.length ? `<div class="discreto">trocado de: ${item.tentados.map(nomeExercicio).join(', ')}</div>` : ''}
-        <div class="acoes">${acoes}</div>
-      </div>`;
-  }).join('');
-
   return `
     <p class="discreto">${LOCAIS[s.local]} · ${s.minutos} min · ${feitos}/${s.itens.length} feitos</p>
     ${aviso ? `<p class="aviso">${aviso}</p>` : ''}
-    ${cartoes}
+    ${s.itens.map(cartaoExercicio).join('')}
     <button class="principal" data-acao="encerrar">Encerrar treino</button>
     <button class="texto centro" data-acao="cancelar">Descartar este treino</button>
   `;
 }
+
+// ---------- Descanso entre séries ----------
+
+let apitou = true;
+let audio = null;
+
+// Um bipe curto quando o descanso acaba. O iPhone só libera som depois de um toque,
+// por isso o AudioContext é criado no toque de "Série".
+function apito() {
+  try {
+    const osc = audio.createOscillator();
+    osc.frequency.value = 880;
+    osc.connect(audio.destination);
+    osc.start();
+    osc.stop(audio.currentTime + 0.3);
+  } catch { /* sem som, o aviso visual basta */ }
+}
+
+setInterval(() => {
+  const descanso = estado.sessaoAtual?.descanso;
+  const $c = document.getElementById('cronometro');
+  if (!descanso || !$c) return;
+  const resta = Math.ceil((descanso.ate - Date.now()) / 1000);
+  if (resta > 0) {
+    $c.textContent = `⏱ Descanso: ${Math.floor(resta / 60)}:${String(resta % 60).padStart(2, '0')}`;
+    $c.classList.remove('acabou');
+  } else {
+    $c.textContent = '⏱ Descanso acabou. Próxima série!';
+    $c.classList.add('acabou');
+    if (!apitou) { apitou = true; apito(); }
+  }
+}, 250);
 
 // ---------- Aba Corrida ----------
 
@@ -144,9 +214,32 @@ const acoes = {
       }),
     };
   },
-  feito: (d) => { estado.sessaoAtual.itens[d.i].status = 'feito'; aviso = ''; },
+  serie: (d) => {
+    const s = estado.sessaoAtual;
+    const item = s.itens[d.i];
+    const ex = exercicio(item.exercicioId);
+    const k = Number(d.k);
+    const feitas = item.seriesFeitas ?? 0;
+    if (k === feitas + 1) {
+      // marcou a próxima série: começa o descanso
+      item.seriesFeitas = k;
+      s.descanso = { i: Number(d.i), ate: Date.now() + ex.descanso * 1000 };
+      apitou = false;
+      try { audio ??= new AudioContext(); } catch { /* navegador sem áudio */ }
+      if (k === ex.series) item.status = 'feito';
+    } else if (k === feitas) {
+      // tocou de novo na última série marcada: desfaz
+      item.seriesFeitas = k - 1;
+      delete s.descanso;
+    }
+    aviso = '';
+  },
   pular: (d) => { estado.sessaoAtual.itens[d.i].status = 'pulado'; aviso = ''; },
-  desfazer: (d) => { estado.sessaoAtual.itens[d.i].status = null; },
+  desfazer: (d) => {
+    const item = estado.sessaoAtual.itens[d.i];
+    if (item.status === 'feito') item.seriesFeitas = exercicio(item.exercicioId).series - 1;
+    item.status = null;
+  },
   trocar: (d) => {
     const item = estado.sessaoAtual.itens[d.i];
     const novo = trocarExercicio({
@@ -156,8 +249,8 @@ const acoes = {
       exercicios: EXERCICIOS,
     });
     if (novo) {
-      item.tentados.push(item.exercicioId);
-      item.exercicioId = novo;
+      const tentados = [...item.tentados, item.exercicioId];
+      Object.assign(item, novoItem(item.vaga, novo, estado.sessoes), { tentados });
       aviso = '';
     } else {
       aviso = `Sem outra opção de "${VAGAS[item.vaga]}" aqui. Espere a máquina ou pule.`;
@@ -165,7 +258,8 @@ const acoes = {
   },
   encerrar: () => {
     const s = estado.sessaoAtual;
-    s.itens.forEach((i) => { i.status ??= 'pulado'; }); // o que não foi marcado conta como pulado
+    s.itens.forEach((i) => { i.status = statusFinal(i); });
+    delete s.descanso;
     estado.sessoes.push(s);
     estado.sessaoAtual = null;
   },
@@ -185,16 +279,22 @@ const acoes = {
 
 $app.addEventListener('click', (ev) => {
   const alvo = ev.target.closest('[data-acao]');
-  if (!alvo || alvo.type === 'checkbox') return;
+  if (!alvo || alvo.tagName === 'INPUT') return;
   acoes[alvo.dataset.acao](alvo.dataset, alvo);
   atualizar();
 });
 
 $app.addEventListener('change', (ev) => {
   const alvo = ev.target;
-  if (alvo.dataset.acao !== 'equip') return;
-  acoes.equip(alvo.dataset, alvo);
-  atualizar();
+  if (alvo.dataset.acao === 'equip') {
+    acoes.equip(alvo.dataset, alvo);
+    atualizar();
+  } else if (alvo.dataset.acao === 'carga') {
+    // salva sem redesenhar, para não tirar o foco do campo
+    const valor = alvo.value.replace(',', '.');
+    estado.sessaoAtual.itens[alvo.dataset.i].carga = valor === '' ? null : Number(valor);
+    salvar(estado);
+  }
 });
 
 $app.addEventListener('submit', (ev) => {

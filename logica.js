@@ -50,7 +50,8 @@ export function montarTreino({ minutos, equipamentoLocal, sessoes, exercicios })
 
   return vagas.map((vaga) => {
     const opcoes = exerciciosDisponiveis(exercicios, vaga, equipamentoLocal);
-    return { vaga, exercicioId: escolherExercicio(opcoes, ultimoExercicio).id, status: null, tentados: [] };
+    const exercicioId = escolherExercicio(opcoes, ultimoExercicio).id;
+    return novoItem(vaga, exercicioId, sessoes);
   });
 }
 
@@ -66,4 +67,24 @@ export function trocarExercicio({ item, equipamentoLocal, sessoes, exercicios })
 
   const livres = opcoes.filter((e) => e.equip !== 'maquina');
   return escolherExercicio(livres.length > 0 ? livres : opcoes, ultimoExercicio).id;
+}
+
+// Peso (kg) usado da última vez neste exercício, ou null se nunca foi anotado.
+export function ultimaCarga(sessoes, exercicioId) {
+  for (let s = sessoes.length - 1; s >= 0; s--) {
+    const item = sessoes[s].itens.find((i) => i.exercicioId === exercicioId && i.carga != null);
+    if (item) return item.carga;
+  }
+  return null;
+}
+
+// Item novo do treino, com o peso da última vez já preenchido.
+export function novoItem(vaga, exercicioId, sessoes) {
+  return { vaga, exercicioId, status: null, tentados: [], seriesFeitas: 0, carga: ultimaCarga(sessoes, exercicioId) };
+}
+
+// Ao encerrar o treino: exercício com ao menos uma série feita conta como feito.
+export function statusFinal(item) {
+  if (item.status) return item.status;
+  return (item.seriesFeitas ?? 0) > 0 ? 'feito' : 'pulado';
 }

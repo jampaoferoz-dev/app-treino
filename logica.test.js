@@ -1,7 +1,7 @@
 // Testes das regras. Rodar com: node --test
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { montarTreino, trocarExercicio } from './logica.js';
+import { montarTreino, trocarExercicio, ultimaCarga, statusFinal } from './logica.js';
 import { EXERCICIOS, EQUIPAMENTO_PADRAO } from './dados.js';
 
 const academia = EQUIPAMENTO_PADRAO.smartfit;
@@ -47,4 +47,26 @@ test('troca prefere opção sem máquina e não repete o que já foi tentado', (
   const todas = ['puxada', 'remada_baixa', 'remada_halter', 'barra_fixa'];
   const semSaida = { vaga: 'puxar', exercicioId: 'puxada', tentados: todas.slice(1) };
   assert.equal(trocarExercicio({ item: semSaida, equipamentoLocal: academia, sessoes: [], exercicios: EXERCICIOS }), null);
+});
+
+test('traz o peso da última vez que o exercício foi feito', () => {
+  const sessoes = [
+    { data: 1, itens: [{ vaga: 'agachar', exercicioId: 'leg_press', status: 'feito', carga: 80 }] },
+    { data: 2, itens: [{ vaga: 'agachar', exercicioId: 'goblet', status: 'feito', carga: 16 }] },
+    { data: 3, itens: [{ vaga: 'agachar', exercicioId: 'leg_press', status: 'feito', carga: 90 }] },
+  ];
+  assert.equal(ultimaCarga(sessoes, 'leg_press'), 90);
+  assert.equal(ultimaCarga(sessoes, 'goblet'), 16);
+  assert.equal(ultimaCarga(sessoes, 'extensora'), null);
+
+  const treino = montarTreino({ minutos: 60, equipamentoLocal: academia, sessoes: [sessoes[0]], exercicios: EXERCICIOS });
+  const agachar = treino.find((i) => i.vaga === 'agachar');
+  assert.equal(agachar.seriesFeitas, 0);
+  assert.equal(agachar.carga, ultimaCarga([sessoes[0]], agachar.exercicioId));
+});
+
+test('ao encerrar, série parcial conta como feito e nenhuma série como pulado', () => {
+  assert.equal(statusFinal({ status: null, seriesFeitas: 1 }), 'feito');
+  assert.equal(statusFinal({ status: null, seriesFeitas: 0 }), 'pulado');
+  assert.equal(statusFinal({ status: 'pulado', seriesFeitas: 2 }), 'pulado');
 });
